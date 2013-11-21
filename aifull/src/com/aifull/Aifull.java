@@ -12,7 +12,7 @@ import android.widget.Toast;
 
 public class Aifull extends Activity {
 	
-	 // Debugging
+	 //For Debugging
     private static final String TAG = "Aifull";
     private static final boolean D = true;
 	
