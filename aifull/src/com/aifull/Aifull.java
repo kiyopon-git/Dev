@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
 import android.widget.Toast;
 
 
@@ -14,14 +16,26 @@ public class Aifull extends Activity {
 	
 	 //For Debugging
     private static final String TAG = "Aifull";
-    private static final boolean D = true;
 	
 	private BluetoothAdapter _bluetooth = BluetoothAdapter.getDefaultAdapter();
 	private AifullService _service;
-	
+	private ListView lv;
 	
 	private static final int REQUEST_CONNECT_DEVICE = 1;
-
+	
+	// Message types sent from the BluetoothChatService Handler
+    public static final int MESSAGE_STATE_CHANGE = 1;
+    public static final int MESSAGE_READ = 2;
+    public static final int MESSAGE_WRITE = 3;
+    public static final int MESSAGE_DEVICE_NAME = 4;
+    public static final int MESSAGE_TOAST = 5;
+	
+ // Key names received from the BluetoothChatService Handler
+    public static final String DEVICE_NAME = "device_name";
+    public static final String TOAST = "toast";
+    
+	// Return Intent extra
+    public static String EXTRA_DEVICE_ADDRESS = "device_address";
 	
 	
 	@Override
@@ -51,6 +65,10 @@ public class Aifull extends Activity {
 			finish();
 			return;
 		}
+		
+		
+		//make List view
+		lv = (ListView)findViewById(R.id.listView1);
 	}
 	
 	@Override
@@ -68,10 +86,36 @@ public class Aifull extends Activity {
 		//getMenuInflater().inflate(R.menu.aifull, menu);
 		
 		//項目の追加
-		menu.add(Menu.NONE, 0, 0, "端末を検出する");
+		menu.add(Menu.NONE, 0, 0, "端末を検出する(Paired)");
+		menu.add(Menu.NONE, 1, 1, "端末を検出する(New)");
 		return super.onCreateOptionsMenu(menu);
 		
 	}
+	
+	@Override
+	public void onActivityResult(int requestCode, int resultCode, Intent data){
+		super.onActivityResult(requestCode, resultCode, data);
+		
+        Log.d("onActivityResule", "test");
+        switch (requestCode){
+        	case REQUEST_CONNECT_DEVICE:
+        	if(resultCode == Activity.RESULT_OK){
+        		Toast.makeText(getApplicationContext(), "検出した結果を出力します", Toast.LENGTH_LONG).show();
+        		ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, 
+        				data.getStringArrayListExtra(EXTRA_DEVICE_ADDRESS));
+        		lv.setAdapter(adapter);
+        		//MACアドレスを使って端末をBluetooth接続する
+        		
+        		
+        	}
+        	break;
+        	
+        default:
+        	break;
+        	
+        }
+	}
+	
 	
 	//menuボタンが押された時
 	public boolean onOptionsItemSelected(MenuItem mi){
@@ -79,7 +123,18 @@ public class Aifull extends Activity {
 		if(mi.getItemId() == 0){
 			Log.d(TAG, "getItemId() = 0");
 			Toast.makeText(getApplicationContext(), "検出します", Toast.LENGTH_SHORT).show();
-			doDiscovery();
+			// Launch the DeviceListActivity to see devices and do scan
+	        Intent serverIntent = new Intent(this, DeviceListActivity.class);
+	        serverIntent.putExtra(DeviceListActivity.DETECT_TYPE, DeviceListActivity.PIRED);
+	        startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
+			return true;
+		}else if(mi.getItemId() == 1){
+			Log.d(TAG, "getItemId() = 0");
+			Toast.makeText(getApplicationContext(), "検出します", Toast.LENGTH_SHORT).show();
+			// Launch the DeviceListActivity to see devices and do scan
+	        Intent serverIntent = new Intent(this, DeviceListActivity.class);
+	        serverIntent.putExtra(DeviceListActivity.DETECT_TYPE, DeviceListActivity.NEW);
+	        startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
 			return true;
 		}
 		return false;
@@ -102,58 +157,6 @@ public class Aifull extends Activity {
 		 
 	}
 	
-	private void doDiscovery() {
-		Log.d(TAG, "doDiscover()");
-		// Launch the DeviceListActivity to see devices and do scan
-        Intent serverIntent = new Intent(this, DeviceListActivity.class);
-        startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
-	    /*
-		Log.d(TAG, "show prev devices");
-	    //接続履歴のあるデバイスを取得して表示
-	    pairedDeviceAdapter = new ArrayAdapter(this, R.layout.activity_aifull);
-	    //BluetoothAdapterから、接続履歴のあるデバイスの情報を取得
-	    Set<BluetoothDevice> pairedDevices = _bluetooth.getBondedDevices();
-	    if(pairedDevices.size() > 0){
-	    	//接続履歴のあるデバイスが存在する
-	    	for(BluetoothDevice device:pairedDevices){
-	    		//接続履歴のあるデバイスの情報を順に取得してアダプタに詰める
-	    		//getName()・・・デバイス名取得メソッド
-	    		//getAddress()・・・デバイスのMACアドレス取得メソッド
-	    		pairedDeviceAdapter.add(device.getName() + "\n" + device.getAddress());
-	    	}
-	    	ListView deviceList = (ListView)findViewById(R.id.listView1);
-	    	deviceList.setAdapter(pairedDeviceAdapter);
-	    }
-	    
-	    
-	    Log.d(TAG, "start Discover");
-	    //接続したことが無い端末を探す
-	    if (!_bluetooth.isDiscovering()) {
-	        _bluetooth.startDiscovery();
-	        // 検索中がわかるようにToast表示
-	        Toast.makeText(getApplicationContext(), "デバイスを検索中です", Toast.LENGTH_LONG).show();
-	    }
-	    
-	    Log.d(TAG, "define reciver");
-	    final BroadcastReceiver _receiver = new BroadcastReceiver() {
-	        public void onReceive(Context context, Intent intent) {
-	            String action = intent.getAction();
-	            // When discovery finds a device
-	            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-	                // Get the BluetoothDevice object from the Intent
-	                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-	                // Add the name and address to an array adapter to show in a ListView
-	                pairedDeviceAdapter.add(device.getName() + "\n" + device.getAddress());
-	            }
-	        }
-	    };
-	    
-	    Log.d(TAG, "regist reciver");
-	    // Register the BroadcastReceiver
-	    IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-	    registerReceiver(_receiver, filter);
-	    */
-	}
 	
 	@Override
 	protected void onDestroy(){
