@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2009 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.aifull;
 
 import java.io.IOException;
@@ -27,15 +43,20 @@ public class AifullService {
     private static final boolean D = true;
 
     // Name for the SDP record when creating server socket
-    private static final String NAME = "Aifull";
+    private static final String NAME_SECURE = "BluetoothChatSecure";
+    private static final String NAME_INSECURE = "BluetoothChatInsecure";
 
     // Unique UUID for this application
-    private static final UUID MY_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66");
+    private static final UUID MY_UUID_SECURE =
+        UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66");
+    private static final UUID MY_UUID_INSECURE =
+        UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
 
     // Member fields
     private final BluetoothAdapter mAdapter;
     private final Handler mHandler;
-    private AcceptThread mAcceptThread;
+    private AcceptThread mSecureAcceptThread;
+    private AcceptThread mInsecureAcceptThread;
     private ConnectThread mConnectThread;
     private ConnectedThread mConnectedThread;
     private int mState;
@@ -87,19 +108,25 @@ public class AifullService {
         // Cancel any thread currently running a connection
         if (mConnectedThread != null) {mConnectedThread.cancel(); mConnectedThread = null;}
 
-        // Start the thread to listen on a BluetoothServerSocket
-        if (mAcceptThread == null) {
-            mAcceptThread = new AcceptThread();
-            mAcceptThread.start();
-        }
         setState(STATE_LISTEN);
+
+        // Start the thread to listen on a BluetoothServerSocket
+        if (mSecureAcceptThread == null) {
+            mSecureAcceptThread = new AcceptThread(true);
+            mSecureAcceptThread.start();
+        }
+        if (mInsecureAcceptThread == null) {
+            mInsecureAcceptThread = new AcceptThread(false);
+            mInsecureAcceptThread.start();
+        }
     }
 
     /**
      * Start the ConnectThread to initiate a connection to a remote device.
      * @param device  The BluetoothDevice to connect
+     * @param secure Socket Security type - Secure (true) , Insecure (false)
      */
-    public synchronized void connect(BluetoothDevice device) {
+    public synchronized void connect(BluetoothDevice device, boolean secure) {
         if (D) Log.d(TAG, "connect to: " + device);
 
         // Cancel any thread attempting to make a connection
@@ -111,7 +138,7 @@ public class AifullService {
         if (mConnectedThread != null) {mConnectedThread.cancel(); mConnectedThread = null;}
 
         // Start the thread to connect with the given device
-        mConnectThread = new ConnectThread(device);
+        mConnectThread = new ConnectThread(device, secure);
         mConnectThread.start();
         setState(STATE_CONNECTING);
     }
@@ -121,8 +148,9 @@ public class AifullService {
      * @param socket  The BluetoothSocket on which the connection was made
      * @param device  The BluetoothDevice that has been connected
      */
-    public synchronized void connected(BluetoothSocket socket, BluetoothDevice device) {
-        if (D) Log.d(TAG, "connected");
+    public synchronized void connected(BluetoothSocket socket, BluetoothDevice
+            device, final String socketType) {
+        if (D) Log.d(TAG, "connected, Socket Type:" + socketType);
 
         // Cancel the thread that completed the connection
         if (mConnectThread != null) {mConnectThread.cancel(); mConnectThread = null;}
@@ -131,10 +159,17 @@ public class AifullService {
         if (mConnectedThread != null) {mConnectedThread.cancel(); mConnectedThread = null;}
 
         // Cancel the accept thread because we only want to connect to one device
-        if (mAcceptThread != null) {mAcceptThread.cancel(); mAcceptThread = null;}
+        if (mSecureAcceptThread != null) {
+            mSecureAcceptThread.cancel();
+            mSecureAcceptThread = null;
+        }
+        if (mInsecureAcceptThread != null) {
+            mInsecureAcceptThread.cancel();
+            mInsecureAcceptThread = null;
+        }
 
         // Start the thread to manage the connection and perform transmissions
-        mConnectedThread = new ConnectedThread(socket);
+        mConnectedThread = new ConnectedThread(socket, socketType);
         mConnectedThread.start();
 
         // Send the name of the connected device back to the UI Activity
@@ -152,9 +187,26 @@ public class AifullService {
      */
     public synchronized void stop() {
         if (D) Log.d(TAG, "stop");
-        if (mConnectThread != null) {mConnectThread.cancel(); mConnectThread = null;}
-        if (mConnectedThread != null) {mConnectedThread.cancel(); mConnectedThread = null;}
-        if (mAcceptThread != null) {mAcceptThread.cancel(); mAcceptThread = null;}
+
+        if (mConnectThread != null) {
+            mConnectThread.cancel();
+            mConnectThread = null;
+        }
+
+        if (mConnectedThread != null) {
+            mConnectedThread.cancel();
+            mConnectedThread = null;
+        }
+
+        if (mSecureAcceptThread != null) {
+            mSecureAcceptThread.cancel();
+            mSecureAcceptThread = null;
+        }
+
+        if (mInsecureAcceptThread != null) {
+            mInsecureAcceptThread.cancel();
+            mInsecureAcceptThread = null;
+        }
         setState(STATE_NONE);
     }
 
@@ -179,28 +231,30 @@ public class AifullService {
      * Indicate that the connection attempt failed and notify the UI Activity.
      */
     private void connectionFailed() {
-        setState(STATE_LISTEN);
-
         // Send a failure message back to the Activity
         Message msg = mHandler.obtainMessage(Aifull.MESSAGE_TOAST);
         Bundle bundle = new Bundle();
         bundle.putString(Aifull.TOAST, "Unable to connect device");
         msg.setData(bundle);
         mHandler.sendMessage(msg);
+
+        // Start the service over to restart listening mode
+        AifullService.this.start();
     }
 
     /**
      * Indicate that the connection was lost and notify the UI Activity.
      */
     private void connectionLost() {
-        setState(STATE_LISTEN);
-
         // Send a failure message back to the Activity
         Message msg = mHandler.obtainMessage(Aifull.MESSAGE_TOAST);
         Bundle bundle = new Bundle();
         bundle.putString(Aifull.TOAST, "Device connection was lost");
         msg.setData(bundle);
         mHandler.sendMessage(msg);
+
+        // Start the service over to restart listening mode
+        AifullService.this.start();
     }
 
     /**
@@ -211,22 +265,32 @@ public class AifullService {
     private class AcceptThread extends Thread {
         // The local server socket
         private final BluetoothServerSocket mmServerSocket;
+        private String mSocketType;
 
-        public AcceptThread() {
+        public AcceptThread(boolean secure) {
             BluetoothServerSocket tmp = null;
+            mSocketType = secure ? "Secure":"Insecure";
 
             // Create a new listening server socket
             try {
-                tmp = mAdapter.listenUsingRfcommWithServiceRecord(NAME, MY_UUID);
+                if (secure) {
+                    tmp = mAdapter.listenUsingRfcommWithServiceRecord(NAME_SECURE,
+                        MY_UUID_SECURE);
+                } else {
+                    tmp = mAdapter.listenUsingInsecureRfcommWithServiceRecord(
+                            NAME_INSECURE, MY_UUID_INSECURE);
+                }
             } catch (IOException e) {
-                Log.e(TAG, "listen() failed", e);
+                Log.e(TAG, "Socket Type: " + mSocketType + "listen() failed", e);
             }
             mmServerSocket = tmp;
         }
 
         public void run() {
-            if (D) Log.d(TAG, "BEGIN mAcceptThread" + this);
-            setName("AcceptThread");
+            if (D) Log.d(TAG, "Socket Type: " + mSocketType +
+                    "BEGIN mAcceptThread" + this);
+            setName("AcceptThread" + mSocketType);
+
             BluetoothSocket socket = null;
 
             // Listen to the server socket if we're not connected
@@ -236,7 +300,7 @@ public class AifullService {
                     // successful connection or an exception
                     socket = mmServerSocket.accept();
                 } catch (IOException e) {
-                    Log.e(TAG, "accept() failed", e);
+                    Log.e(TAG, "Socket Type: " + mSocketType + "accept() failed", e);
                     break;
                 }
 
@@ -247,7 +311,8 @@ public class AifullService {
                         case STATE_LISTEN:
                         case STATE_CONNECTING:
                             // Situation normal. Start the connected thread.
-                            connected(socket, socket.getRemoteDevice());
+                            connected(socket, socket.getRemoteDevice(),
+                                    mSocketType);
                             break;
                         case STATE_NONE:
                         case STATE_CONNECTED:
@@ -262,15 +327,16 @@ public class AifullService {
                     }
                 }
             }
-            if (D) Log.i(TAG, "END mAcceptThread");
+            if (D) Log.i(TAG, "END mAcceptThread, socket Type: " + mSocketType);
+
         }
 
         public void cancel() {
-            if (D) Log.d(TAG, "cancel " + this);
+            if (D) Log.d(TAG, "Socket Type" + mSocketType + "cancel " + this);
             try {
                 mmServerSocket.close();
             } catch (IOException e) {
-                Log.e(TAG, "close() of server failed", e);
+                Log.e(TAG, "Socket Type" + mSocketType + "close() of server failed", e);
             }
         }
     }
@@ -284,24 +350,32 @@ public class AifullService {
     private class ConnectThread extends Thread {
         private final BluetoothSocket mmSocket;
         private final BluetoothDevice mmDevice;
+        private String mSocketType;
 
-        public ConnectThread(BluetoothDevice device) {
+        public ConnectThread(BluetoothDevice device, boolean secure) {
             mmDevice = device;
             BluetoothSocket tmp = null;
+            mSocketType = secure ? "Secure" : "Insecure";
 
             // Get a BluetoothSocket for a connection with the
             // given BluetoothDevice
             try {
-                tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
+                if (secure) {
+                    tmp = device.createRfcommSocketToServiceRecord(
+                            MY_UUID_SECURE);
+                } else {
+                    tmp = device.createInsecureRfcommSocketToServiceRecord(
+                            MY_UUID_INSECURE);
+                }
             } catch (IOException e) {
-                Log.e(TAG, "create() failed", e);
+                Log.e(TAG, "Socket Type: " + mSocketType + "create() failed", e);
             }
             mmSocket = tmp;
         }
 
         public void run() {
-            Log.i(TAG, "BEGIN mConnectThread");
-            setName("ConnectThread");
+            Log.i(TAG, "BEGIN mConnectThread SocketType:" + mSocketType);
+            setName("ConnectThread" + mSocketType);
 
             // Always cancel discovery because it will slow down a connection
             mAdapter.cancelDiscovery();
@@ -312,15 +386,14 @@ public class AifullService {
                 // successful connection or an exception
                 mmSocket.connect();
             } catch (IOException e) {
-                connectionFailed();
                 // Close the socket
                 try {
                     mmSocket.close();
                 } catch (IOException e2) {
-                    Log.e(TAG, "unable to close() socket during connection failure", e2);
+                    Log.e(TAG, "unable to close() " + mSocketType +
+                            " socket during connection failure", e2);
                 }
-                // Start the service over to restart listening mode
-                AifullService.this.start();
+                connectionFailed();
                 return;
             }
 
@@ -330,14 +403,14 @@ public class AifullService {
             }
 
             // Start the connected thread
-            connected(mmSocket, mmDevice);
+            connected(mmSocket, mmDevice, mSocketType);
         }
 
         public void cancel() {
             try {
                 mmSocket.close();
             } catch (IOException e) {
-                Log.e(TAG, "close() of connect socket failed", e);
+                Log.e(TAG, "close() of connect " + mSocketType + " socket failed", e);
             }
         }
     }
@@ -351,8 +424,8 @@ public class AifullService {
         private final InputStream mmInStream;
         private final OutputStream mmOutStream;
 
-        public ConnectedThread(BluetoothSocket socket) {
-            Log.d(TAG, "create ConnectedThread");
+        public ConnectedThread(BluetoothSocket socket, String socketType) {
+            Log.d(TAG, "create ConnectedThread: " + socketType);
             mmSocket = socket;
             InputStream tmpIn = null;
             OutputStream tmpOut = null;
