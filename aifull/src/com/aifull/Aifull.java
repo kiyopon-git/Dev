@@ -58,7 +58,7 @@ public class Aifull extends Activity {
 			Toast.makeText(getApplicationContext(), "Bluetoothが対応していません", Toast.LENGTH_SHORT).show();
 			finish();
 		}
- 		
+
 	}
 	
 	@Override
@@ -130,6 +130,7 @@ public class Aifull extends Activity {
 		
 	}
 	
+	
 	private ServiceConnection mConnection = new ServiceConnection() {
 	    public void onServiceConnected(ComponentName className, IBinder service) {
 	 
@@ -161,6 +162,5 @@ public class Aifull extends Activity {
 	    }
 	}
 	
-
-
 }
+

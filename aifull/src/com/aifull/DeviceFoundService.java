@@ -10,7 +10,7 @@
 */
 package com.aifull;
 
-import java.util.ArrayList;
+import java.lang.reflect.Method;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -39,7 +39,6 @@ public class DeviceFoundService extends Service{
     private BluetoothAdapter _bluetooth = null;
     private AifullService _chatservice = null;
     private Vibrator _vibrator= null;
-    private ArrayList<String> NewAdressList;
     private BluetoothDevice founddevice;
     private Timer _timer;
     
@@ -106,30 +105,7 @@ public class DeviceFoundService extends Service{
         _bluetooth.startDiscovery();
     	
     }
-    
-    public class MyTimerTask extends TimerTask {
 
-    	private Handler handler;
-    	private Context context;
-
-    	public MyTimerTask(Context context) {
-    		handler = new Handler();
-    	    this.context = context;
-    	}
-
-    	@Override
-    	public void run() {
-    		handler.post(new Runnable() {
-    			@Override
-    			public void run() {
-    				Log.d(TAG, "-------------");
-    				if(_chatservice.getState() == AifullService.STATE_LISTEN){
-    					connectPairdDevice();
-    				}
-    			}
-    		});
-    	}
-    }
     
     private void conect(String bluetoothadder,BluetoothAdapter btAdapter){
         Log.d(TAG, "-------------接続要求-------------");
@@ -159,7 +135,6 @@ public class DeviceFoundService extends Service{
 	                    Log.d(TAG, "送信データ:"+message);
 	                    _chatservice.write(message.getBytes());
 	                    Log.d(TAG, "SendMessage");
-	                    //Aifull.Vibrate(BluetoothChat.MESSAGE_VIBRATE_OFF, main_context);
 	                    break;
 	
 	                case AifullService.STATE_CONNECTING:
@@ -179,7 +154,6 @@ public class DeviceFoundService extends Service{
 	                    Vibrate(Aifull.MESSAGE_VIBRATE_ON);
 	                    Log.d("tagbt", "送信データ:"+endM);
 	                    _chatservice.write(endM.getBytes());
-	                    //BluetoothChat.Vibrate(BluetoothChat.MESSAGE_VIBRATE_OFF, context);
 	                }
 	                if (message.equals("--end--")) {
 	                    _chatservice.stop();
@@ -208,16 +182,50 @@ public class DeviceFoundService extends Service{
 	            if (founddevice.getBondState() != BluetoothDevice.BOND_BONDED) {
 	            	if(_chatservice.getState() == AifullService.STATE_LISTEN){
 		            	_chatservice.connect(founddevice, false);
+		            	unpairDevice(founddevice);
 	            	}
 	            }else {
-	            	if(_chatservice.getState() == AifullService.STATE_LISTEN)
+	            	if(_chatservice.getState() == AifullService.STATE_LISTEN){
 	            		_chatservice.connect(founddevice, false);
+	            		unpairDevice(founddevice);
+	            	}
 	            }
 	        }
 
 	    }
 	};
 	
+	public class MyTimerTask extends TimerTask {
+
+        private Handler handler;
+        private Context context;
+
+        public MyTimerTask(Context context) {
+                handler = new Handler();
+            this.context = context;
+        }
+        @Override
+        public void run() {
+                handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                                Log.d(TAG, "-------------");
+                                if(_chatservice.getState() == AifullService.STATE_LISTEN){
+                                        connectPairdDevice();
+                                }
+                        }
+                });
+        }
+	}
+	
+	private void unpairDevice(BluetoothDevice device) {
+		try {
+			Method m = device.getClass().getMethod("removeBond", (Class[]) null);
+			m.invoke(device, (Object[]) null);
+		 } catch (Exception e) {
+			 Log.e(TAG, e.getMessage());
+		 }
+	}
 	
     public void Vibrate(int state){
 
