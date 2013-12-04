@@ -10,8 +10,9 @@
 */
 package com.aifull;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
@@ -40,6 +41,7 @@ public class DeviceFoundService extends Service{
     private Vibrator _vibrator= null;
     private ArrayList<String> NewAdressList;
     private BluetoothDevice founddevice;
+    private Timer _timer;
     
     private final IBinder mBinder = new LocalBinder();
  
@@ -69,6 +71,10 @@ public class DeviceFoundService extends Service{
         }else{
         	Log.d(TAG, "Bluetoothが有効になっていません");
         }
+        
+        _timer = new Timer();
+        TimerTask timerTask = new MyTimerTask(this);
+        _timer.scheduleAtFixedRate(timerTask, 0, 15000);
     }
  
     @Override
@@ -99,6 +105,30 @@ public class DeviceFoundService extends Service{
         // Request discover from BluetoothAdapter
         _bluetooth.startDiscovery();
     	
+    }
+    
+    public class MyTimerTask extends TimerTask {
+
+    	private Handler handler;
+    	private Context context;
+
+    	public MyTimerTask(Context context) {
+    		handler = new Handler();
+    	    this.context = context;
+    	}
+
+    	@Override
+    	public void run() {
+    		handler.post(new Runnable() {
+    			@Override
+    			public void run() {
+    				Log.d(TAG, "-------------");
+    				if(_chatservice.getState() == AifullService.STATE_LISTEN){
+    					connectPairdDevice();
+    				}
+    			}
+    		});
+    	}
     }
     
     private void conect(String bluetoothadder,BluetoothAdapter btAdapter){
@@ -169,18 +199,6 @@ public class DeviceFoundService extends Service{
 	        String action = intent.getAction();
 	        String ACTION_PAIRING_REQUEST = "android.bluetooth.device.action.PAIRING_REQUEST";
 	        
-            
-            if (action.equals(ACTION_PAIRING_REQUEST)){
-            	try {
-					wait(3000);
-					setPin(founddevice);
-	    			_chatservice.connect(founddevice, true);
-				} catch (Exception e) {
-					// TODO 自動生成された catch ブロック
-					e.printStackTrace();
-				}
-
-            }
 	        // When discovery finds a device
 	        if (BluetoothDevice.ACTION_FOUND.equals(action)) {
 	        	intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -189,58 +207,17 @@ public class DeviceFoundService extends Service{
 	            // If it's already paired, skip it, because it's been listed already
 	            if (founddevice.getBondState() != BluetoothDevice.BOND_BONDED) {
 	            	if(_chatservice.getState() == AifullService.STATE_LISTEN){
-		            	pairDevice(founddevice);
-		            	//_chatservice.connect(device, true);
-		                //NewAdressList.add(device.getAddress());
+		            	_chatservice.connect(founddevice, false);
 	            	}
 	            }else {
 	            	if(_chatservice.getState() == AifullService.STATE_LISTEN)
-	            		_chatservice.connect(founddevice, true);
+	            		_chatservice.connect(founddevice, false);
 	            }
 	        }
 
 	    }
 	};
 	
-	//自動でペアリングを行う
-    private void setPin(BluetoothDevice device){    
-		try {
-        	if (D) Log.d(TAG, "set Pairing...");
-			Method convertPinToBytesMethod = BluetoothDevice.class.getMethod("convertPinToBytes", new Class[]{ String.class });
-			byte[] pinCodes = (byte[])convertPinToBytesMethod.invoke(BluetoothDevice.class, "0000");
-			// PINコード登録
-		    Method setPinMethod = device.getClass().getMethod("setPasskey", new Class[]{ byte[].class });
-		    setPinMethod.invoke(device, pinCodes);
-		} catch (Exception e) {
-			// TODO 自動生成された catch ブロック
-			e.printStackTrace();
-		}
-    }
-    
-	private void pairDevice(BluetoothDevice device) {
-		try {
-			if (D) Log.d(TAG, "Start Pairing...");
-	
-			Method m = device.getClass()
-					.getMethod("createBond", (Class[]) null);
-			m.invoke(device, (Object[]) null);
-			if (D) Log.d(TAG, "Pairing finished.");
-		} catch (Exception e) {
-			Log.e(TAG, e.getMessage());
-		}
-	}
-	
-	
-	//ペアリングの削除
-	private void unpairDevice(BluetoothDevice device) {
-		try {
-			Method m = device.getClass()
-					.getMethod("removeBond", (Class[]) null);
-			m.invoke(device, (Object[]) null);
-		} catch (Exception e) {
-			Log.e(TAG, e.getMessage());
-		}
-	}
 	
     public void Vibrate(int state){
 

@@ -89,11 +89,7 @@ public class Aifull extends Activity {
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
 		// Inflate the menu; this adds items to the action bar if it is present.
-		//getMenuInflater().inflate(R.menu.aifull, menu);
-		
-		//項目の追加
-		menu.add(Menu.NONE, 0, 0, "端末を検出する(Paired)");
-		menu.add(Menu.NONE, 1, 1, "端末を検出する(New)");
+		//getMenuInflater().inflate(R.menu.aifull, menu););
 		return super.onCreateOptionsMenu(menu);
 		
 	}
@@ -110,15 +106,6 @@ public class Aifull extends Activity {
 	//menuボタンが押された時
 	public boolean onOptionsItemSelected(MenuItem mi){
 		
-		if(mi.getItemId() == 0){
-			Log.d(TAG, "getItemId() = 0");
-			mDeviceFoundService.Vibrate(MESSAGE_VIBRATE_ON);
-			return true;
-		}else if(mi.getItemId() == 1){
-			Log.d(TAG, "getItemId() = 1");
-			mDeviceFoundService.connectPairdDevice();
-			return true;
-		}
 		return false;
 	}
 	
