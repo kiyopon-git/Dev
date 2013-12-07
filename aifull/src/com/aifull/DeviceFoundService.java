@@ -1,12 +1,11 @@
 /*
-①チャットサービス作成(小難しい端末間接続とかが作りこんである)
+①AifullService作成(小難しい端末間接続とかが作りこんである)
 ②他の端末を探す
-③ひとつひとつの端末にイカの処理の繰返しを行う
-	①ペアリングの作成
-	②接続の開始
-	③接続できた場合はバイブレーション(ハンドラでイベントを監視)
-	④接続の解除
-	⑤ペアリングの削除
+③見つけた端末ひとつひとつに以下の処理の繰返しを行う
+	①接続の開始
+	②接続できた場合はバイブレーション(ハンドラでイベントを監視)
+	③接続の解除
+	④ペアリングの削除
 */
 package com.aifull;
 
@@ -31,31 +30,33 @@ import android.util.Log;
 
 public class DeviceFoundService extends Service{
 
-	// Debugging
+	// デバッグ用
     private static final String TAG = "Aifull";
     private static final boolean D = true;
-    
-    // Local Bluetooth adapter
+
+    // 各種オブジェクト生成
     private BluetoothAdapter _bluetooth = null;
     private AifullService _chatservice = null;
     private Vibrator _vibrator= null;
     private BluetoothDevice founddevice;
     private Timer _timer;
-    
+
     private final IBinder mBinder = new LocalBinder();
- 
+
     public class LocalBinder extends Binder {
     	DeviceFoundService getService() {
             return DeviceFoundService.this;
         }
     }
- 
+
     @Override
     public void onCreate() {
         Log.d(TAG,"onCreate");
-        
+
+        // バイブ機能の呼び出し
         _vibrator = (Vibrator)this.getSystemService(VIBRATOR_SERVICE);
-        
+
+        // Bluetoothのアダプタを作成し、端末間での通信をする_chatserviceを作成する
         _bluetooth=BluetoothAdapter.getDefaultAdapter();//getDefaultAdapter() の結果が null の場合は、そのデバイスが Bluetooth をサポートしていないことを示す
         if(_bluetooth.isEnabled()){
         	if (_chatservice==null) {
@@ -70,29 +71,30 @@ public class DeviceFoundService extends Service{
         }else{
         	Log.d(TAG, "Bluetoothが有効になっていません");
         }
-        
+
+        // 一定時間(１５秒)間隔で端末を探すようにタイマーをセットする
         _timer = new Timer();
         TimerTask timerTask = new MyTimerTask(this);
         _timer.scheduleAtFixedRate(timerTask, 0, 15000);
     }
- 
+
     @Override
     public IBinder onBind(Intent intent) {
         return mBinder;
     }
- 
+
     @Override
     public void onDestroy() {
         Log.d(TAG,"onDestroy");
     }
- 
+
     // Methods for client
     public void userFunction() {
         Log.d(TAG,"userFunction");
     }
-    
+
     public void connectPairdDevice(){
-    	
+
         // Register for broadcasts when a device is discovered
         IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
         this.registerReceiver(mReceiver, filter);
@@ -103,23 +105,12 @@ public class DeviceFoundService extends Service{
         Log.d(TAG,"startDiscovery");
         // Request discover from BluetoothAdapter
         _bluetooth.startDiscovery();
-    	
-    }
 
-    
-    private void conect(String bluetoothadder,BluetoothAdapter btAdapter){
-        Log.d(TAG, "-------------接続要求-------------");
-       //Bluetoothの接続要求(クライアント)
-       Log.d(TAG, "bluetoothadder:" + bluetoothadder+"---");
-        if(bluetoothadder!=null){
-            BluetoothDevice devicebt = btAdapter.getRemoteDevice(bluetoothadder);
-            _chatservice.connect(devicebt, true);
-        }
     }
 
 	//チャットサーバから情報を取得するハンドラ
 	private final Handler handler=new Handler() {
-	
+
 	    //ハンドルメッセージ
 	    @Override
 	    public void handleMessage(Message msg) {
@@ -130,13 +121,13 @@ public class DeviceFoundService extends Service{
 	                case AifullService.STATE_CONNECTED:
 	                    Log.d(TAG, "-------------接続完了-------------");
 	                    //メッセージの送信
-	                    String message="S";
+	                    String message="--start--";
 	                    Vibrate(Aifull.MESSAGE_VIBRATE_ON);
 	                    Log.d(TAG, "送信データ:"+message);
 	                    _chatservice.write(message.getBytes());
 	                    Log.d(TAG, "SendMessage");
 	                    break;
-	
+
 	                case AifullService.STATE_CONNECTING:
 	                    Log.d(TAG, "接続中");break;
 	                case AifullService.STATE_LISTEN:
@@ -149,7 +140,7 @@ public class DeviceFoundService extends Service{
 	                byte[] readBuf=(byte[])msg.obj;
 	                String message = new String(readBuf,0,msg.arg1);
 	                Log.d("tagbt","受信データ:"+ message);
-	                if(message.equals("S")){
+	                if(message.equals("--start--")){
 	                    String endM="--end--";
 	                    Vibrate(Aifull.MESSAGE_VIBRATE_ON);
 	                    Log.d("tagbt", "送信データ:"+endM);
@@ -163,38 +154,33 @@ public class DeviceFoundService extends Service{
 	        }
 	    }
 	};
-	
-	
+
+
 	// The BroadcastReceiver that listens for discovered devices and
 	// changes the title when discovery is finished
 	private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
 	        String action = intent.getAction();
-	        String ACTION_PAIRING_REQUEST = "android.bluetooth.device.action.PAIRING_REQUEST";
-	        
-	        // When discovery finds a device
+
+	        // 端末を発見したとき
 	        if (BluetoothDevice.ACTION_FOUND.equals(action)) {
 	        	intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 	            // Get the BluetoothDevice object from the Intent
 	        	founddevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-	            // If it's already paired, skip it, because it's been listed already
-	            if (founddevice.getBondState() != BluetoothDevice.BOND_BONDED) {
-	            	if(_chatservice.getState() == AifullService.STATE_LISTEN){
-		            	_chatservice.connect(founddevice, false);
-		            	unpairDevice(founddevice);
-	            	}
-	            }else {
-	            	if(_chatservice.getState() == AifullService.STATE_LISTEN){
-	            		_chatservice.connect(founddevice, false);
-	            		unpairDevice(founddevice);
-	            	}
+
+	            if(_chatservice.getState() == AifullService.STATE_LISTEN){
+	            	// 端末間でコネクションの形成
+	            	_chatservice.connect(founddevice, false);
+	            	// ペアリングの削除
+	            	unpairDevice(founddevice);
 	            }
+
 	        }
 
 	    }
 	};
-	
+
 	public class MyTimerTask extends TimerTask {
 
         private Handler handler;
@@ -217,7 +203,7 @@ public class DeviceFoundService extends Service{
                 });
         }
 	}
-	
+
 	private void unpairDevice(BluetoothDevice device) {
 		try {
 			Method m = device.getClass().getMethod("removeBond", (Class[]) null);
@@ -226,7 +212,7 @@ public class DeviceFoundService extends Service{
 			 Log.e(TAG, e.getMessage());
 		 }
 	}
-	
+
     public void Vibrate(int state){
 
     	 Log.d(TAG, "vib");
@@ -239,5 +225,5 @@ public class DeviceFoundService extends Service{
     		break;
     	}
     }
-    
+
 }
